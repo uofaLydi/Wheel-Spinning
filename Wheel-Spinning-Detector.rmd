@@ -1,0 +1,159 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Final Report Presentation
+Presented by: Lydia González
+April 16, 2021
+
+## Performance Comparison of Tree-Based Classification Algorithms to Predict Wheel-Spinning on Students using the ASSISTments Dataset
+
+## ASSISTments and Skill Builder data set
+
+## What is wheel-spinning?
+# 0 - learned skill
+# 1 - did not learn skill
+
+# Importing libraries
+```{r}
+library(rpart)
+library(rpart.plot)
+library(ipred)
+library(caret)
+library(ModelMetrics)
+library(dplyr)
+```
+
+# Importing cleaned CSV file
+URL for file: https://github.com/dharmangbhavsar/Predicting-Wheel-Spinning/blob/master/Data/cleaned.csv
+```{r}
+
+skillBuilderData <- read.csv("~/Downloads/uofa/wheel-spinning/cleaned.csv")
+colnames(skillBuilderData)[19] = "wheelSpinning"
+skillBuilderData$wheelSpinning <- factor(ifelse(skillBuilderData$wheelSpinning == "1", 1, 0))
+```
+
+# Inspect data set
+```{r}
+names(skillBuilderData)
+dim(skillBuilderData)
+str(skillBuilderData)
+```
+
+# Split data set into training and testing
+```{r}
+n <- nrow(skillBuilderData)
+n_train <- round(0.8 * n)
+set.seed(123)
+train_indices <- sample(1:n, n_train)
+
+# Subsetting training data frame
+skillBuilderTrain <- skillBuilderData[train_indices, ]
+
+# Subsetting testing data frame
+skillBuilderTest <- skillBuilderData[-train_indices, ]
+```
+
+# Decision Tree
+```{r}
+treeModel <- rpart(wheelSpinning ~ answer_type + attempt_count + base_sequence_id + bottom_hint + correct + first_action + hint_count + hint_total + ms_first_response + opportunity + opportunity_original + order_id + overlap_time + skill_id + tutor_mode + user_id, skillBuilderTrain, method = "class")
+rpart.plot(treeModel, yesno = 2)
+
+## Generate predictions and evaluate model
+test_prediction = predict(treeModel, newdata = skillBuilderTest, type = "class")
+caret::confusionMatrix(test_prediction, as.factor(skillBuilderTest$wheelSpinning))
+
+## Generate predicted values on test set and evaluate on AUC
+probPrediction <- predict(object = treeModel, newdata = skillBuilderTest, type = "prob")
+# Compute AUC
+auc(actual = ifelse(skillBuilderTest$wheelSpinning == "1", 1, 0), predicted = probPrediction[, "1"])
+```
+```{r}
+probPrediction
+```
+
+```{r}
+## Generate predictions and evaluate model
+test_prediction1 = predict(treeModel, newdata = skillBuilderTrain, type = "class")
+caret::confusionMatrix(test_prediction1, as.factor(skillBuilderTrain$wheelSpinning))
+
+
+## Generate predicted values on test set and evaluate on AUC
+probPrediction1 <- predict(object = treeModel, newdata = skillBuilderTrain, type = "prob")
+# Compute AUC
+auc(actual = ifelse(skillBuilderTrain$wheelSpinning == "1", 1, 0), predicted = probPrediction1[, "1"])
+```
+
+
+```{r}
+df <- data.frame(imp = treeModel$variable.importance)
+df2 <- df %>%
+  tibble::rownames_to_column() %>% 
+  dplyr::rename("variable" = rowname) %>% 
+  dplyr::arrange(imp) %>%
+  dplyr::mutate(variable = forcats::fct_inorder(variable))
+ggplot2::ggplot(df2) +
+  geom_col(aes(x = variable, y = imp),
+           col = "black", show.legend = F) +
+  coord_flip()  +
+  scale_fill_gradient2(low = "green", high = "yellow")
+```
+```{r}
+round(treeModel$variable.importance, 2)
+```
+
+# Bagged Tree
+```{r}
+# Change NA values to 0
+skillBuilderTrain[is.na(skillBuilderTrain)] <- 0
+skillBuilderTest[is.na(skillBuilderTest)] <- 0
+
+baggedModel <- bagging(wheelSpinning ~ answer_type + attempt_count + base_sequence_id + bottom_hint + correct + first_action + hint_count + hint_total + ms_first_response + opportunity + opportunity_original + order_id + overlap_time + skill_id + tutor_mode + user_id, skillBuilderTrain, coob = TRUE)
+
+# Generate predictions and evaluate model
+bagged_prediction <- predict(baggedModel, skillBuilderTest, type = "class")
+caret::confusionMatrix(bagged_prediction, skillBuilderTest$wheelSpinning)
+
+## Generate predicted values on test set and evaluate on AUC
+baggedProbPrediction <- predict(baggedModel, skillBuilderTest, type = "prob")
+# Compute AUC
+auc(actual = ifelse(skillBuilderTest$wheelSpinning == "1", 1, 0), predicted = baggedProbPrediction[, "1"])
+```
+```{r}
+# Generate predictions and evaluate model
+bagged_prediction1 <- predict(baggedModel, skillBuilderTrain, type = "class")
+caret::confusionMatrix(bagged_prediction1, skillBuilderTrain$wheelSpinning)
+
+## Generate predicted values on test set and evaluate on AUC
+baggedProbPrediction1 <- predict(baggedModel, skillBuilderTrain, type = "prob")
+# Compute AUC
+auc(actual = ifelse(skillBuilderTrain$wheelSpinning == "1", 1, 0), predicted = baggedProbPrediction1[, "1"])
+```
+```
+
+
+```{r}
+pred.imp <- varImp(baggedModel)
+pred.imp
+```
+
+
+```{r}
+barplot(pred.imp$Overall,
+        names.arg = row.names(pred.imp))
+```
+# Discussion
+```{r}
+df <- data.frame(imp = pred.imp$Overall)
+df2 <- df %>%
+  tibble::rownames_to_column() %>% 
+  dplyr::rename("variable" = rowname) %>% 
+  dplyr::arrange(imp) %>%
+  dplyr::mutate(variable = forcats::fct_inorder(variable))
+ggplot2::ggplot(df2) +
+  geom_col(aes(x = variable, y = imp),
+           col = "black", show.legend = F) +
+  coord_flip()  +
+  scale_fill_gradient2(low = "green", high = "yellow")
+```
